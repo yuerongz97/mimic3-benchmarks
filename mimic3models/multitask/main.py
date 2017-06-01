@@ -54,11 +54,11 @@ parser.set_defaults(small_part=False)
 args = parser.parse_args()
 print args
 
-train_reader = MultitaskReader(dataset_dir='../../data/multitask/train/',
-                                  listfile='../../data/multitask/train_listfile.csv')
+train_reader = MultitaskReader(dataset_dir=os.path.join(os.path.expanduser('~'), 'staging/data/mimic3-benchmarks/multitask/train/'),
+                                  listfile=os.path.join(os.path.expanduser('~'), 'staging/data/mimic3-benchmarks/multitask/train_listfile.csv'))
 
-val_reader = MultitaskReader(dataset_dir='../../data/multitask/train/',
-                                 listfile='../../data/multitask/val_listfile.csv')
+val_reader = MultitaskReader(dataset_dir=os.path.join(os.path.expanduser('~'), 'staging/data/mimic3-benchmarks/multitask/train/'),
+                                 listfile=os.path.join(os.path.expanduser('~'), 'staging/data/mimic3-benchmarks/multitask/val_listfile.csv'))
 
 discretizer = Discretizer(timestep=float(args.timestep),
                           store_masks=True,
@@ -221,8 +221,9 @@ if args.mode == 'train':
         do_epoch('train', epoch)
         epoch_loss = do_epoch('test', epoch)
 
-        state_name = 'states/%s.epoch%d.test%.8f.state' % (network_name, epoch,
-                                                           epoch_loss)
+        state_name = os.path.join(os.path.expanduser('~'), 
+                                  'staging', 'states/%s.epoch%d.test%.8f.state'
+                                                % (network_name, epoch, epoch_loss))
         if ((epoch + 1) % args.save_every == 0):    
             print "==> saving ... %s" % state_name
             network.save_params(state_name, epoch)
@@ -234,8 +235,8 @@ elif args.mode == 'test':
     del train_reader
     del val_reader 
     
-    test_reader = MultitaskReader(dataset_dir='../../data/multitask/test/',
-                                      listfile='../../data/multitask/test_listfile.csv')
+    test_reader = MultitaskReader(dataset_dir=os.path.join(os.path.expanduser('~'), 'staging/data/mimic3-benchmarks/multitask/test/'),
+                                      listfile=os.path.join(os.path.expanduser('~'), 'staging/data/mimic3-benchmarks/multitask/test_listfile.csv'))
     data_raw = utils.load_data(test_reader, discretizer, normalizer, args.small_part)
     
     data_raw_copy = copy.deepcopy(data_raw) # TODO: delete this 

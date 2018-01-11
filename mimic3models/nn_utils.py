@@ -16,7 +16,7 @@ class BaseNetwork:
         if not os.path.exists(os.path.dirname(file_name)):
             os.makedirs(os.path.dirname(file_name))
         
-        with open(file_name, 'w') as save_file:
+        with open(file_name, 'wb') as save_file:
             pickle.dump(
                 obj = {
                     'params' : [x.get_value() for x in self.params],
@@ -30,7 +30,7 @@ class BaseNetwork:
     def load_state(self, file_name):
         print "==> loading state %s" % file_name
         epoch = 0
-        with open(file_name, 'r') as load_file:
+        with open(file_name, 'rb') as load_file:
             dict = pickle.load(load_file)
             loaded_params = dict['params']
             assert(len(self.params) == len(loaded_params))
@@ -79,17 +79,20 @@ def multilabel_loss_with_mask(preds, labels, mask):
     return -(mask * (labels * T.log(preds) + (1 - labels) * T.log(1 - preds))).mean(axis=1).mean(axis=0)
 
 
-def pad_zeros(arr):
+def pad_zeros(arr, min_length=None):
     """
     `arr` is an array of `np.array`s
     
     The function appends zeros to every `np.array` in `arr`
     to equalize their first axis lenghts.
     """
-    
+    dtype = arr[0].dtype
     max_len = max([x.shape[0] for x in arr])
-    ret = [np.concatenate([x, np.zeros((max_len - x.shape[0],) + x.shape[1:])], axis=0) 
+    ret = [np.concatenate([x, np.zeros((max_len - x.shape[0],) + x.shape[1:], dtype=dtype)], axis=0) 
                 for x in arr]
+    if (min_length is not None) and ret[0].shape[0] < min_length:
+        ret = [np.concatenate([x, np.zeros((min_length - x.shape[0],) + x.shape[1:], dtype=dtype)], axis=0)
+                for x in ret]
     return np.array(ret)
     
 
@@ -100,7 +103,6 @@ def pad_zeros_from_left(arr):
     The function appends zeros from left to every `np.array` in `arr`
     to equalize their first axis lenghts.
     """
-    
     max_len = max([x.shape[0] for x in arr])
     ret = [np.concatenate([np.zeros((max_len - x.shape[0],) + x.shape[1:]), x], axis=0) 
                 for x in arr]

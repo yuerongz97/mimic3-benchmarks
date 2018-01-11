@@ -1,4 +1,9 @@
 import numpy as np
+from mimic3models import nn_utils
+from mimic3models import common_utils
+import threading
+import random
+
 
 def read_chunk(reader, chunk_size):
     data = []
@@ -13,13 +18,69 @@ def read_chunk(reader, chunk_size):
     return (data, ts, ys, header)
 
 
-def load_phenotypes(reader, discretizer, normalizer, small_part=False):
+def load_data(reader, discretizer, normalizer, small_part=False, pad=False):
     N = reader.get_number_of_examples()
-    if (small_part == True):
+    if small_part:
         N = 1000
     (data, ts, ys, header) = read_chunk(reader, N)
     data = [discretizer.transform(X, end=t)[0] for (X, t) in zip(data, ts)]
     if (normalizer is not None):
         data = [normalizer.transform(X) for X in data]
     ys = np.array(ys, dtype=np.int32)
+    if pad:
+        return (nn_utils.pad_zeros(data), ys)
     return (data, ys)
+
+
+class BatchGen(object):
+
+    def __init__(self, reader, discretizer, normalizer,
+                 batch_size, small_part, target_repl, shuffle):
+        self.data = load_data(reader, discretizer, normalizer, small_part)
+        self.batch_size = batch_size
+        self.target_repl = target_repl
+        self.steps = (len(self.data[0]) + batch_size - 1) // batch_size
+        self.shuffle = shuffle
+        self.lock = threading.Lock()
+        self.generator = self._generator()
+
+    def _generator(self):
+        B = self.batch_size
+        while True:
+            if self.shuffle:
+                N = len(self.data[1])
+                order = range(N)
+                random.shuffle(order)
+                tmp = [[None] * N, [None] * N]
+                for i in range(N):
+                    tmp[0][i] = self.data[0][order[i]]
+                    tmp[1][i] = self.data[1][order[i]]
+                self.data = tmp
+            else:
+                # sort entirely
+                self.data = common_utils.sort_and_shuffle(self.data, B)
+
+            self.data[1] = np.array(self.data[1]) # this is important for Keras
+            for i in range(0, len(self.data[0]), B):
+                x = self.data[0][i:i+B]
+                y = self.data[1][i:i+B]
+
+                x = nn_utils.pad_zeros(x)
+                y = np.array(y) # (B, 25)
+
+                if self.target_repl:
+                    T = x.shape[1]
+                    y_rep = np.expand_dims(y, axis=1).repeat(T, axis=1) # (B, T, 25)
+                    yield (x, [y, y_rep])
+                else:
+                    yield (x, y)
+
+    def __iter__(self):
+        return self.generator
+
+    def next(self):
+        with self.lock:
+            return self.generator.next()
+
+    def __next__(self):
+        return self.generator.__next__()

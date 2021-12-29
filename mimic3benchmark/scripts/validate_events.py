@@ -29,13 +29,16 @@ def main():
 
     subdirectories = os.listdir(args.subjects_root_path)
     subjects = list(filter(is_subject_folder, subdirectories))
+    # 文件夹名必须是数字
 
+    # 遍历每一个病人
     for subject in tqdm(subjects, desc='Iterating over subjects'):
         stays_df = pd.read_csv(os.path.join(args.subjects_root_path, subject, 'stays.csv'), index_col=False,
                                dtype={'HADM_ID': str, "ICUSTAY_ID": str})
+        # 入院记录
         stays_df.columns = stays_df.columns.str.upper()
 
-        # assert that there is no row with empty ICUSTAY_ID or HADM_ID
+        # 确保没有空的ICUSTAY_ID或HADM_ID
         assert(not stays_df['ICUSTAY_ID'].isnull().any())
         assert(not stays_df['HADM_ID'].isnull().any())
 
@@ -44,6 +47,7 @@ def main():
         assert(len(stays_df['ICUSTAY_ID'].unique()) == len(stays_df['ICUSTAY_ID']))
         assert(len(stays_df['HADM_ID'].unique()) == len(stays_df['HADM_ID']))
 
+        # 读取病人的events记录
         events_df = pd.read_csv(os.path.join(args.subjects_root_path, subject, 'events.csv'), index_col=False,
                                 dtype={'HADM_ID': str, "ICUSTAY_ID": str})
         events_df.columns = events_df.columns.str.upper()
@@ -53,23 +57,31 @@ def main():
         # TODO: maybe we can recover HADM_ID by looking at ICUSTAY_ID
         empty_hadm += events_df['HADM_ID'].isnull().sum()
         events_df = events_df.dropna(subset=['HADM_ID'])
-
+        # 删除HADM_ID为空的events
         merged_df = events_df.merge(stays_df, left_on=['HADM_ID'], right_on=['HADM_ID'],
                                     how='left', suffixes=['', '_r'], indicator=True)
 
         # we drop all events for which HADM_ID is not listed in stays.csv
         # since there is no way to know the targets of that stay (for example mortality)
         no_hadm_in_stay += (merged_df['_merge'] == 'left_only').sum()
+        # 没有在stays.csv中出现的HADM_ID
         merged_df = merged_df[merged_df['_merge'] == 'both']
+        # 仅保留HADM_ID在stays.csv中出现的events
+
 
         # if ICUSTAY_ID is empty in stays.csv, we try to recover it
         # we exclude all events for which we could not recover ICUSTAY_ID
         cur_no_icustay = merged_df['ICUSTAY_ID'].isnull().sum()
+        # 当前病人的ICUSTAY_ID为空的events
         no_icustay += cur_no_icustay
         merged_df.loc[:, 'ICUSTAY_ID'] = merged_df['ICUSTAY_ID'].fillna(merged_df['ICUSTAY_ID_r'])
+        # 将ICUSTAY_ID为空的events的ICUSTAY_ID替换为stays.csv中的ICUSTAY_ID
         recovered += cur_no_icustay - merged_df['ICUSTAY_ID'].isnull().sum()
+        # 已经恢复的ICUSTAY_ID为空的events
         could_not_recover += merged_df['ICUSTAY_ID'].isnull().sum()
+        # 没有恢复的ICUSTAY_ID为空的events
         merged_df = merged_df.dropna(subset=['ICUSTAY_ID'])
+        # 删除ICUSTAY_ID为空的events
 
         # now we take a look at the case when ICUSTAY_ID is present in events.csv, but not in stays.csv
         # this mean that ICUSTAY_ID in events.csv is not the same as that of stays.csv for the same HADM_ID
@@ -79,6 +91,7 @@ def main():
 
         to_write = merged_df[['SUBJECT_ID', 'HADM_ID', 'ICUSTAY_ID', 'CHARTTIME', 'ITEMID', 'VALUE', 'VALUEUOM']]
         to_write.to_csv(os.path.join(args.subjects_root_path, subject, 'events.csv'), index=False)
+        # 将events.csv中的HADM_ID、ICUSTAY_ID、CHARTTIME、ITEMID、VALUE、VALUEUOM列保存到events.csv中
 
     assert(could_not_recover == 0)
     print('n_events: {}'.format(n_events))

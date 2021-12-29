@@ -50,10 +50,13 @@ def transform_ethnicity(ethnicity_series):
 def assemble_episodic_data(stays, diagnoses):
     data = {'Icustay': stays.ICUSTAY_ID, 'Age': stays.AGE, 'Length of Stay': stays.LOS,
             'Mortality': stays.MORTALITY}
+    # 性别转换为索引
     data.update(transform_gender(stays.GENDER))
+    # 种族转换为索引
     data.update(transform_ethnicity(stays.ETHNICITY))
     data['Height'] = np.nan
     data['Weight'] = np.nan
+    # ICU记录ID设置为索引
     data = DataFrame(data).set_index('Icustay')
     data = data[['Ethnicity', 'Gender', 'Age', 'Height', 'Weight', 'Length of Stay', 'Mortality']]
     return data.merge(extract_diagnosis_labels(diagnoses), left_index=True, right_index=True)
@@ -87,6 +90,8 @@ def extract_diagnosis_labels(diagnoses):
 
 def add_hcup_ccs_2015_groups(diagnoses, definitions):
     def_map = {}
+    # code->（诊断名，是否使用）
+    # 预定义的各个诊断名
     for dx in definitions:
         for code in definitions[dx]['codes']:
             def_map[code] = (dx, definitions[dx]['use_in_benchmark'])
@@ -97,8 +102,10 @@ def add_hcup_ccs_2015_groups(diagnoses, definitions):
 
 def make_phenotype_label_matrix(phenotypes, stays=None):
     phenotypes = phenotypes[['ICUSTAY_ID', 'HCUP_CCS_2015']].loc[phenotypes.USE_IN_BENCHMARK > 0].drop_duplicates()
+    # 需使用的ICU记录
     phenotypes['VALUE'] = 1
     phenotypes = phenotypes.pivot(index='ICUSTAY_ID', columns='HCUP_CCS_2015', values='VALUE')
+    # 透视图，行对应每一个icu记录，列为每一个需要的诊断名，若该icu记录有该诊断，则为1，否则为0
     if stays is not None:
         phenotypes = phenotypes.reindex(stays.ICUSTAY_ID.sort_values())
     return phenotypes.fillna(0).astype(int).sort_index(axis=0).sort_index(axis=1)

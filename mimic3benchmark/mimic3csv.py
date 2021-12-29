@@ -40,6 +40,7 @@ def read_icd_diagnoses_table(mimic3_path):
     diagnoses = dataframe_from_csv(os.path.join(mimic3_path, 'DIAGNOSES_ICD.csv'))
     diagnoses = diagnoses.merge(codes, how='inner', left_on='ICD9_CODE', right_on='ICD9_CODE')
     diagnoses[['SUBJECT_ID', 'HADM_ID', 'SEQ_NUM']] = diagnoses[['SUBJECT_ID', 'HADM_ID', 'SEQ_NUM']].astype(int)
+    # SEQ_NUM为此次入院的诊断结果的排序，1为最高优先级
     return diagnoses
 
 
@@ -55,6 +56,7 @@ def read_events_table_by_row(mimic3_path, table):
 def count_icd_codes(diagnoses, output_path=None):
     codes = diagnoses[['ICD9_CODE', 'SHORT_TITLE', 'LONG_TITLE']].drop_duplicates().set_index('ICD9_CODE')
     codes['COUNT'] = diagnoses.groupby('ICD9_CODE')['ICUSTAY_ID'].count()
+    # 每一个诊断所对应的ICU记录数
     codes.COUNT = codes.COUNT.fillna(0).astype(int)
     codes = codes[codes.COUNT > 0]
     if output_path:
@@ -65,7 +67,7 @@ def count_icd_codes(diagnoses, output_path=None):
 def remove_icustays_with_transfers(stays):
     stays = stays[(stays.FIRST_WARDID == stays.LAST_WARDID) & (stays.FIRST_CAREUNIT == stays.LAST_CAREUNIT)]
     return stays[['SUBJECT_ID', 'HADM_ID', 'ICUSTAY_ID', 'LAST_CAREUNIT', 'DBSOURCE', 'INTIME', 'OUTTIME', 'LOS']]
-
+    # LOS为在ICU中的天数
 
 def merge_on_subject(table1, table2):
     return table1.merge(table2, how='inner', left_on=['SUBJECT_ID'], right_on=['SUBJECT_ID'])
@@ -76,8 +78,12 @@ def merge_on_subject_admission(table1, table2):
 
 
 def add_age_to_icustays(stays):
-    stays['AGE'] = stays.INTIME.subtract(stays.DOB).apply(lambda s: s / np.timedelta64(1, 's')) / 60./60/24/365
-    stays.ix[stays.AGE < 0, 'AGE'] = 90
+    # stays['AGE'] = stays.INTIME.subtract(stays.DOB).apply(lambda s: s / np.timedelta64(1, 's')) / 60./60/24/365
+    stays['AGE'] = (stays.INTIME.dt.date - stays.DOB.dt.date).apply(lambda s: s.days // 365)
+    # INTIME：病人进ICU的时间
+    # stays.ix[stays.AGE < 0, 'AGE'] = 90
+    # ix is deprecated
+    stays.loc[stays.AGE < 0, ['AGE']] = 90
     return stays
 
 
@@ -118,11 +124,9 @@ def break_up_stays_by_subject(stays, output_path, subjects=None):
     nb_subjects = subjects.shape[0]
     for subject_id in tqdm(subjects, total=nb_subjects, desc='Breaking up stays by subjects'):
         dn = os.path.join(output_path, str(subject_id))
-        try:
+        if not os.path.exists(dn):
             os.makedirs(dn)
-        except:
-            pass
-
+        # 保存每一个病人的入院记录
         stays[stays.SUBJECT_ID == subject_id].sort_values(by='INTIME').to_csv(os.path.join(dn, 'stays.csv'),
                                                                               index=False)
 
@@ -132,11 +136,9 @@ def break_up_diagnoses_by_subject(diagnoses, output_path, subjects=None):
     nb_subjects = subjects.shape[0]
     for subject_id in tqdm(subjects, total=nb_subjects, desc='Breaking up diagnoses by subjects'):
         dn = os.path.join(output_path, str(subject_id))
-        try:
+        if not os.path.exists(dn):
             os.makedirs(dn)
-        except:
-            pass
-
+        # 保存每一个病人的ICU记录
         diagnoses[diagnoses.SUBJECT_ID == subject_id].sort_values(by=['ICUSTAY_ID', 'SEQ_NUM'])\
                                                      .to_csv(os.path.join(dn, 'diagnoses.csv'), index=False)
 
@@ -158,10 +160,8 @@ def read_events_table_and_break_up_by_subject(mimic3_path, table, output_path,
 
     def write_current_observations():
         dn = os.path.join(output_path, str(data_stats.curr_subject_id))
-        try:
+        if not os.path.exists(dn):
             os.makedirs(dn)
-        except:
-            pass
         fn = os.path.join(dn, 'events.csv')
         if not os.path.exists(fn) or not os.path.isfile(fn):
             f = open(fn, 'w')
@@ -189,6 +189,7 @@ def read_events_table_and_break_up_by_subject(mimic3_path, table, output_path,
                    'ITEMID': row['ITEMID'],
                    'VALUE': row['VALUE'],
                    'VALUEUOM': row['VALUEUOM']}
+        # 遍历到的行是一个新的病人
         if data_stats.curr_subject_id != '' and data_stats.curr_subject_id != row['SUBJECT_ID']:
             write_current_observations()
         data_stats.curr_obs.append(row_out)
